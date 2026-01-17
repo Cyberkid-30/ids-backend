@@ -13,13 +13,89 @@ A signature-based Network Intrusion Detection System designed for small-scale bu
 
 ## Requirements
 
+### All Platforms
+
 - Python 3.10+
-- Ubuntu Linux (for packet capture)
+
+### Windows 11/10
+
+- [Npcap](https://npcap.com/#download) (required for packet capture)
+- Run terminal as **Administrator**
+
+### Ubuntu/Linux
+
 - Root privileges or CAP_NET_RAW capability
 
-## Quick Start
+---
 
-### 1. Clone and Setup
+## Quick Start - Windows 11/10
+
+### 1. Install Npcap
+
+Download and install Npcap from https://npcap.com/#download
+
+> ⚠️ During installation, check **"Install Npcap in WinPcap API-compatible Mode"**
+
+### 2. Setup Environment (PowerShell as Administrator)
+
+```powershell
+cd ids-backend
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+.\venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Configure
+
+Edit the `.env` file and set your network interface:
+
+```powershell
+# Find your network interface name
+Get-NetAdapter | Select-Object Name, Status, InterfaceDescription
+```
+
+Update `.env`:
+
+```env
+NETWORK_INTERFACE=Ethernet
+# Or "Wi-Fi" for wireless connections
+```
+
+### 4. Initialize Database
+
+```powershell
+python scripts/load_signatures.py
+```
+
+### 5. Run the Server (as Administrator)
+
+```powershell
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 6. Start Detection
+
+Open another PowerShell window or use the browser:
+
+```powershell
+# Start detection engine
+Invoke-RestMethod -Method POST -Uri "http://localhost:8000/api/v1/system/detection/start"
+
+# Check status
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/system/status"
+```
+
+---
+
+## Quick Start - Ubuntu/Linux
+
+### 1. Setup Environment
 
 ```bash
 cd ids-backend
@@ -35,33 +111,66 @@ pip install -r requirements.txt
 ### 2. Configure
 
 ```bash
-# Copy and edit configuration
-cp .env.example .env
-nano .env
+# Find your network interface
+ip link
+# or
+ip addr
 
-# Important: Set your network interface
-# Use 'ip link' to list available interfaces
+# Edit configuration
+nano .env
+```
+
+Update `.env`:
+
+```env
 NETWORK_INTERFACE=eth0
+# Common names: eth0, ens33, enp0s3, wlan0
 ```
 
 ### 3. Initialize Database
 
 ```bash
-# Load signatures from JSON files
 python scripts/load_signatures.py
 ```
 
 ### 4. Run the Server
 
-```bash
-# Development mode (requires sudo for packet capture)
-sudo venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+**Option A: Run with sudo (Development)**
 
-# Or use the startup script
+```bash
+sudo venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Option B: Set CAP_NET_RAW capability (Production)**
+
+```bash
+# One-time setup
+sudo setcap cap_net_raw+ep venv/bin/python3
+
+# Run without sudo
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Option C: Use startup script**
+
+```bash
+chmod +x scripts/start_ids.sh
 sudo ./scripts/start_ids.sh --dev
 ```
 
-### 5. Access the API
+### 5. Start Detection
+
+```bash
+# Start detection engine
+curl -X POST http://localhost:8000/api/v1/system/detection/start
+
+# Check status
+curl http://localhost:8000/api/v1/system/status
+```
+
+---
+
+## Access the API
 
 - **API Documentation**: http://localhost:8000/docs
 - **Alternative Docs**: http://localhost:8000/redoc
@@ -196,13 +305,18 @@ Then reload: `curl -X POST http://localhost:8000/api/v1/system/signatures/reload
 
 ## Permissions for Packet Capture
 
-### Option 1: Run as Root (Development)
+### Windows
+
+1. Install [Npcap](https://npcap.com/#download) with WinPcap API-compatible mode
+2. Always run your terminal (PowerShell/CMD) as **Administrator**
+
+### Linux - Option 1: Run as Root (Development)
 
 ```bash
 sudo venv/bin/uvicorn app.main:app --reload
 ```
 
-### Option 2: Set CAP_NET_RAW (Recommended for Production)
+### Linux - Option 2: Set CAP_NET_RAW (Recommended for Production)
 
 ```bash
 # Set capability on Python interpreter
@@ -229,21 +343,40 @@ curl "http://<target_ip>:8080/?id=1' OR '1'='1"
 
 ## Troubleshooting
 
-### "Permission denied" on packet capture
+### Windows: "No such device" or adapter errors
 
-Run with sudo or set CAP_NET_RAW capability (see above).
+1. Ensure Npcap is installed with WinPcap compatibility mode
+2. Run PowerShell/terminal as Administrator
+3. Verify interface name matches output of `Get-NetAdapter`
+
+### Windows: "Permission denied"
+
+Always run the terminal as Administrator for packet capture.
+
+### Linux: "Permission denied" on packet capture
+
+Run with sudo or set CAP_NET_RAW capability:
+
+```bash
+sudo setcap cap_net_raw+ep venv/bin/python3
+```
 
 ### No alerts generated
 
 1. Check detection is running: `GET /api/v1/system/status`
 2. Verify signatures are loaded: `GET /api/v1/signatures`
 3. Check network interface is correct in `.env`
+4. Ensure traffic is flowing through the monitored interface
 
 ### Database errors
 
 ```bash
-# Reset database
+# Reset database (Linux/macOS)
 rm data/ids.db
+python scripts/load_signatures.py
+
+# Reset database (Windows PowerShell)
+Remove-Item data\ids.db
 python scripts/load_signatures.py
 ```
 
