@@ -6,7 +6,7 @@ This is the main service that coordinates all components.
 """
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import threading
 from sqlalchemy.orm import Session
 
@@ -72,9 +72,7 @@ class DetectionEngine:
             int: Number of signatures loaded
         """
         with self._signatures_lock:
-            self._signatures = (
-                db.query(Signature).filter(Signature.enabled).all()
-            )
+            self._signatures = db.query(Signature).filter(Signature.enabled).all()
             count = len(self._signatures)
 
         ids_logger.info(f"Loaded {count} signatures for detection")
@@ -151,7 +149,7 @@ class DetectionEngine:
 
         # Start packet capture
         self.is_running = True
-        self._stats.start_time = datetime.utcnow()
+        self._stats.start_time = datetime.now(timezone.utc)
 
         success = self.sniffer.start_async_capture(callback=self._on_packet_captured)
 
@@ -235,7 +233,7 @@ class DetectionStats:
         """Get uptime in seconds."""
         if self.start_time is None:
             return 0.0
-        delta = datetime.utcnow() - self.start_time
+        delta = datetime.now(timezone.utc) - self.start_time
         return delta.total_seconds()
 
     def reset(self):
