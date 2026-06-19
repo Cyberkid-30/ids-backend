@@ -20,7 +20,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging import ids_logger
 from app.database.init_db import init_database
-from app.services.detector import get_detection_engine
+from app.api.deps import init_detection_engine
 
 
 @asynccontextmanager
@@ -41,8 +41,8 @@ async def lifespan(app: FastAPI):
     ids_logger.info("Initializing database...")
     init_database()
 
-    # Get detection engine (don't start automatically - use API)
-    detector = get_detection_engine()
+    # Initialise detection engine (don't start automatically - use API)
+    detector = init_detection_engine()
     ids_logger.info("Detection engine ready (not started)")
     ids_logger.info(f"Configured interface: {settings.NETWORK_INTERFACE}")
 

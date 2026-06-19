@@ -4,6 +4,7 @@ System status and control API routes.
 Provides endpoints for system health, status, and detection control.
 """
 
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
@@ -154,7 +155,7 @@ def get_network_info():
     summary="Start detection",
     description="Start the packet capture and detection engine.",
 )
-def start_detection(detector: DetectionEngine = Depends(get_detector)):
+async def start_detection(detector: DetectionEngine = Depends(get_detector)):
     """
     Start the detection engine.
 
@@ -174,7 +175,7 @@ def start_detection(detector: DetectionEngine = Depends(get_detector)):
             detail="Detection is already running",
         )
 
-    # Verify permissions
+    # Verify permissions (fast – no I/O)
     perm_ok, perm_msg = verify_capture_permissions()
     if not perm_ok:
         raise HTTPException(
@@ -182,7 +183,8 @@ def start_detection(detector: DetectionEngine = Depends(get_detector)):
             detail=f"Cannot start detection: {perm_msg}",
         )
 
-    success = detector.start_detection()
+    # start_detection loads signatures from the DB – offload to thread pool
+    success = await asyncio.to_thread(detector.start_detection)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -198,7 +200,7 @@ def start_detection(detector: DetectionEngine = Depends(get_detector)):
     summary="Stop detection",
     description="Stop the packet capture and detection engine.",
 )
-def stop_detection(detector: DetectionEngine = Depends(get_detector)):
+async def stop_detection(detector: DetectionEngine = Depends(get_detector)):
     """
     Stop the detection engine.
 
@@ -212,10 +214,10 @@ def stop_detection(detector: DetectionEngine = Depends(get_detector)):
             status_code=status.HTTP_400_BAD_REQUEST, detail="Detection is not running"
         )
 
-    # Get stats before stopping
     status_info = detector.get_status()
 
-    detector.stop_detection()
+    # stop_detection joins the writer thread – offload to thread pool
+    await asyncio.to_thread(detector.stop_detection)
 
     ids_logger.info("Detection stopped via API")
     return {
@@ -234,7 +236,7 @@ def stop_detection(detector: DetectionEngine = Depends(get_detector)):
     summary="Reload signatures",
     description="Reload signatures from database into detection engine.",
 )
-def reload_signatures(detector: DetectionEngine = Depends(get_detector)):
+async def reload_signatures(detector: DetectionEngine = Depends(get_detector)):
     """
     Reload signatures from the database.
 
@@ -244,7 +246,7 @@ def reload_signatures(detector: DetectionEngine = Depends(get_detector)):
     Returns:
         Number of signatures loaded
     """
-    count = detector.reload_signatures()
+    count = await asyncio.to_thread(detector.reload_signatures)
 
     ids_logger.info(f"Signatures reloaded via API: {count} signatures")
     return {"status": "reloaded", "signatures_count": count}

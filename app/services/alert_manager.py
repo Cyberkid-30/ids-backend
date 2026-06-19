@@ -11,7 +11,7 @@ from sqlalchemy import func, desc
 
 from app.models.alert import Alert
 from app.models.signature import Signature, SeverityLevel
-from app.services.parser import ParsedPacket, get_parser
+from app.services.parser import ParsedPacket, PacketParser
 from app.core.logging import ids_logger
 
 
@@ -29,9 +29,9 @@ class AlertManager:
     # Maximum payload snippet length to store
     MAX_SNIPPET_LENGTH = 500
 
-    def __init__(self):
+    def __init__(self, parser: Optional[PacketParser] = None):
         """Initialize the alert manager."""
-        self.parser = get_parser()
+        self.parser = parser or PacketParser()
         ids_logger.debug("AlertManager initialized")
 
     def create_alert(
@@ -342,13 +342,3 @@ class AlertManager:
         return deleted
 
 
-# Global alert manager instance
-_alert_manager: Optional[AlertManager] = None
-
-
-def get_alert_manager() -> AlertManager:
-    """Get or create global alert manager instance."""
-    global _alert_manager
-    if _alert_manager is None:
-        _alert_manager = AlertManager()
-    return _alert_manager

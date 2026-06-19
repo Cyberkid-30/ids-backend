@@ -1,4 +1,3 @@
-# type: ignore
 """
 Signature matcher service.
 
@@ -240,13 +239,3 @@ class SignatureMatcher:
         }
 
 
-# Global matcher instance
-_matcher: Optional[SignatureMatcher] = None
-
-
-def get_matcher() -> SignatureMatcher:
-    """Get or create global matcher instance."""
-    global _matcher
-    if _matcher is None:
-        _matcher = SignatureMatcher()
-    return _matcher

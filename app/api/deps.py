@@ -5,20 +5,74 @@ Provides common dependencies for FastAPI route handlers,
 including database sessions and service instances.
 """
 
-from typing import Generator
+from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.services.detector import DetectionEngine, get_detection_engine
-from app.services.alert_manager import AlertManager, get_alert_manager
+from app.services.detector import DetectionEngine
+from app.services.alert_manager import AlertManager
+from app.services.parser import PacketParser
+from app.services.matcher import SignatureMatcher
+
+
+# ---------------------------------------------------------------------------
+# Detection engine singleton lifecycle
+# ---------------------------------------------------------------------------
+# DetectionEngine is stateful (capture thread, stats, loaded signatures), so
+# we manage exactly one instance at the application level.  It is created by
+# init_detection_engine() during the FastAPI lifespan startup and returned by
+# the get_detector() dependency for every request that needs it.
+
+_detection_engine: Optional[DetectionEngine] = None
+
+
+def init_detection_engine() -> DetectionEngine:
+    """Create the single DetectionEngine instance (idempotent)."""
+    global _detection_engine
+    if _detection_engine is None:
+        _detection_engine = DetectionEngine()
+    return _detection_engine
+
+
+def get_detector() -> DetectionEngine:
+    """Dependency that returns the global detection engine."""
+    if _detection_engine is None:
+        raise RuntimeError(
+            "Detection engine not initialised – call init_detection_engine() "
+            "during application startup"
+        )
+    return _detection_engine
+
+
+# ---------------------------------------------------------------------------
+# Stateless service dependencies – fresh instance per request
+# ---------------------------------------------------------------------------
+
+
+def get_alerts_manager() -> AlertManager:
+    """Dependency that provides a fresh AlertManager per request."""
+    return AlertManager()
+
+
+def get_parser() -> PacketParser:
+    """Dependency that provides a fresh PacketParser per request."""
+    return PacketParser()
+
+
+def get_matcher() -> SignatureMatcher:
+    """Dependency that provides a fresh SignatureMatcher per request."""
+    return SignatureMatcher()
+
+
+# ---------------------------------------------------------------------------
+# Database session
+# ---------------------------------------------------------------------------
 
 
 def get_database() -> Generator[Session, None, None]:
     """
     Dependency that provides database session.
-
-    FastAPI dependency injection wrapper for database session.
 
     Yields:
         Session: SQLAlchemy database session
@@ -26,43 +80,15 @@ def get_database() -> Generator[Session, None, None]:
     yield from get_db()
 
 
-def get_detector() -> DetectionEngine:
-    """
-    Dependency that provides detection engine instance.
-
-    Returns:
-        DetectionEngine: Global detection engine
-    """
-    return get_detection_engine()
-
-
-def get_alerts_manager() -> AlertManager:
-    """
-    Dependency that provides alert manager instance.
-
-    Returns:
-        AlertManager: Global alert manager
-    """
-    return get_alert_manager()
+# ---------------------------------------------------------------------------
+# Guard dependency
+# ---------------------------------------------------------------------------
 
 
 def require_detection_running(
     detector: DetectionEngine = Depends(get_detector),
 ) -> DetectionEngine:
-    """
-    Dependency that requires detection engine to be running.
-
-    Raises HTTP 503 if detection is not active.
-
-    Args:
-        detector: Detection engine instance
-
-    Returns:
-        DetectionEngine: Running detection engine
-
-    Raises:
-        HTTPException: If detection is not running
-    """
+    """Require the detection engine to be running (raises 503 otherwise)."""
     if not detector.is_running:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -71,39 +97,21 @@ def require_detection_running(
     return detector
 
 
-class Pagination:
-    """
-    Pagination parameters dependency.
+# ---------------------------------------------------------------------------
+# Pagination
+# ---------------------------------------------------------------------------
 
-    Provides standardized pagination for list endpoints.
-    """
+
+class Pagination:
+    """Standardised pagination parameters for list endpoints."""
 
     def __init__(self, page: int = 1, page_size: int = 50):
-        """
-        Initialize pagination parameters.
-
-        Args:
-            page: Page number (1-indexed)
-            page_size: Number of items per page (max 100)
-        """
-        # Validate and constrain values
         self.page = max(1, page)
         self.page_size = min(max(1, page_size), 100)
-
-        # Calculate offset
         self.skip = (self.page - 1) * self.page_size
         self.limit = self.page_size
 
     def get_response_meta(self, total: int) -> dict:
-        """
-        Generate pagination metadata for response.
-
-        Args:
-            total: Total number of items
-
-        Returns:
-            dict: Pagination metadata
-        """
         return {
             "total": total,
             "page": self.page,

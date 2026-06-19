@@ -280,13 +280,3 @@ class PacketSniffer:
         self.is_running = False
 
 
-# Global sniffer instance
-_sniffer: Optional[PacketSniffer] = None
-
-
-def get_sniffer() -> PacketSniffer:
-    """Get or create global sniffer instance."""
-    global _sniffer
-    if _sniffer is None:
-        _sniffer = PacketSniffer()
-    return _sniffer

@@ -190,13 +190,3 @@ class PacketParser:
             return "[No payload]"
 
 
-# Global parser instance
-_parser: Optional[PacketParser] = None
-
-
-def get_parser() -> PacketParser:
-    """Get or create global parser instance."""
-    global _parser
-    if _parser is None:
-        _parser = PacketParser()
-    return _parser

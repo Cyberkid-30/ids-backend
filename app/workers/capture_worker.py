@@ -10,7 +10,7 @@ import signal
 import sys
 from typing import Optional
 
-from app.services.detector import DetectionEngine, get_detection_engine
+from app.services.detector import DetectionEngine
 from app.database.init_db import init_database
 from app.core.config import settings
 from app.core.logging import ids_logger
@@ -31,7 +31,7 @@ class CaptureWorker:
         Args:
             detector: Detection engine instance (default: global)
         """
-        self.detector = detector or get_detection_engine()
+        self.detector = detector or DetectionEngine()
         self._running = False
         self._setup_signal_handlers()
 

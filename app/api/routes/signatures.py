@@ -16,7 +16,7 @@ from app.schemas.signature import (
     SignatureResponse,
     SignatureList,
 )
-from app.services.detector import get_detection_engine
+from app.api.deps import get_detector
 from app.core.logging import ids_logger
 
 router = APIRouter()
@@ -312,11 +312,11 @@ def toggle_signature(signature_id: int, db: Session = Depends(get_database)):
             detail=f"Signature with ID {signature_id} not found",
         )
 
-    signature.enabled = not signature.enabled # type: ignore
+    signature.enabled = not signature.enabled  # type: ignore
     db.commit()
     db.refresh(signature)
 
-    status_str = "enabled" if signature.enabled else "disabled" # type: ignore
+    status_str = "enabled" if signature.enabled else "disabled"  # type: ignore
     ids_logger.info(f"Signature {status_str}: {signature.name}")
 
     # Trigger signature reload
@@ -327,6 +327,6 @@ def toggle_signature(signature_id: int, db: Session = Depends(get_database)):
 
 def _reload_signatures_if_running():
     """Reload signatures in detection engine if running."""
-    engine = get_detection_engine()
+    engine = get_detector()
     if engine.is_running:
         engine.reload_signatures()
