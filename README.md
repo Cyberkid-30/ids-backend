@@ -10,6 +10,10 @@ A signature-based Network Intrusion Detection System designed for small-scale bu
 - **Alert Management**: View, filter, and manage security alerts
 - **SQLite Database**: Lightweight, file-based storage
 - **Extensible Signatures**: JSON-based signature definitions
+- **Dependency Injection**: Services wired through FastAPI DI — no global singletons, mock-friendly for testing
+- **Async Control Endpoints**: Detection start/stop/reload are async FastAPI handlers — DB I/O offloaded to a thread pool, event loop stays free
+- **Bounded Packet Queue**: Captured packets are pushed onto a bounded queue and processed in batches by a dedicated writer thread — reduces SQLite lock contention under load
+- **Comprehensive Test Suite**: 148 unit + integration tests covering utilities, services, and all API endpoints
 
 ## Supported Platforms
 
@@ -111,34 +115,38 @@ curl http://localhost:8000/api/v1/system/status
 
 ### System Control
 
-| Method | Endpoint                           | Description       |
-| ------ | ---------------------------------- | ----------------- |
-| GET    | `/api/v1/system/health`            | Health check      |
-| GET    | `/api/v1/system/status`            | System status     |
-| POST   | `/api/v1/system/detection/start`   | Start detection   |
-| POST   | `/api/v1/system/detection/stop`    | Stop detection    |
-| POST   | `/api/v1/system/signatures/reload` | Reload signatures |
+| Method | Endpoint                           | Description          |
+| ------ | ---------------------------------- | -------------------- |
+| GET    | `/api/v1/system/health`            | Health check         |
+| GET    | `/api/v1/system/status`            | System status        |
+| GET    | `/api/v1/system/network`           | Network interfaces   |
+| GET    | `/api/v1/system/config`            | Current config       |
+| POST   | `/api/v1/system/detection/start`   | Start detection      |
+| POST   | `/api/v1/system/detection/stop`    | Stop detection       |
+| POST   | `/api/v1/system/signatures/reload` | Reload signatures    |
 
 ### Alerts
 
-| Method | Endpoint                     | Description             |
-| ------ | ---------------------------- | ----------------------- |
-| GET    | `/api/v1/alerts`             | List alerts (paginated) |
-| GET    | `/api/v1/alerts/{id}`        | Get alert details       |
-| PATCH  | `/api/v1/alerts/{id}/status` | Update alert status     |
-| DELETE | `/api/v1/alerts/{id}`        | Delete alert            |
-| GET    | `/api/v1/alerts/stats`       | Alert statistics        |
+| Method | Endpoint                     | Description                 |
+| ------ | ---------------------------- | --------------------------- |
+| GET    | `/api/v1/alerts`             | List alerts (paginated)     |
+| GET    | `/api/v1/alerts/{id}`        | Get alert details           |
+| PATCH  | `/api/v1/alerts/{id}/status` | Update alert status         |
+| DELETE | `/api/v1/alerts/{id}`        | Delete alert                |
+| GET    | `/api/v1/alerts/stats`       | Alert statistics            |
+| POST   | `/api/v1/alerts/cleanup`     | Delete alerts older than N days |
 
 ### Signatures
 
-| Method | Endpoint                         | Description      |
-| ------ | -------------------------------- | ---------------- |
-| GET    | `/api/v1/signatures`             | List signatures  |
-| POST   | `/api/v1/signatures`             | Create signature |
-| GET    | `/api/v1/signatures/{id}`        | Get signature    |
-| PUT    | `/api/v1/signatures/{id}`        | Update signature |
-| DELETE | `/api/v1/signatures/{id}`        | Delete signature |
-| POST   | `/api/v1/signatures/{id}/toggle` | Toggle enabled   |
+| Method | Endpoint                         | Description             |
+| ------ | -------------------------------- | ----------------------- |
+| GET    | `/api/v1/signatures`             | List signatures         |
+| POST   | `/api/v1/signatures`             | Create signature        |
+| GET    | `/api/v1/signatures/{id}`        | Get signature           |
+| PUT    | `/api/v1/signatures/{id}`        | Update signature        |
+| DELETE | `/api/v1/signatures/{id}`        | Delete signature        |
+| POST   | `/api/v1/signatures/{id}/toggle` | Toggle enabled          |
+| GET    | `/api/v1/signatures/categories`  | List signature categories |
 
 ## Usage Examples
 
@@ -194,18 +202,23 @@ ids-backend/
 │   ├── database/            # SQLAlchemy setup
 │   ├── models/              # Database models
 │   ├── schemas/             # Pydantic schemas
-│   ├── services/            # Business logic
+│   ├── services/            # Business logic (no global singletons)
 │   │   ├── sniffer.py       # Packet capture
 │   │   ├── parser.py        # Packet parsing
 │   │   ├── matcher.py       # Signature matching
-│   │   ├── detector.py      # Detection engine
+│   │   ├── detector.py      # Detection engine (bounded packet queue + batch writer thread)
 │   │   └── alert_manager.py # Alert handling
 │   ├── api/                 # REST API routes
+│   │   ├── deps.py          # FastAPI DI container
+│   │   └── routes/          # Endpoint definitions
 │   ├── signatures/          # JSON signature files
 │   └── workers/             # Background workers
 ├── data/                    # Database and logs
 ├── scripts/                 # Utility scripts
-├── tests/                   # Test suite
+├── tests/                   # 148 unit + integration tests
+│   ├── test_utils/          # IP & regex utility tests
+│   ├── test_services/       # Matcher & alert manager tests
+│   └── test_api/            # System, alert & signature endpoint tests
 ├── requirements.txt
 ├── .env
 └── README.md
@@ -230,6 +243,32 @@ sudo setcap cap_net_raw+ep venv/bin/python3
 # Development (quick): run with sudo
 sudo venv/bin/uvicorn app.main:app --reload
 ```
+
+## Running Tests
+
+The project includes **148 tests** covering utilities, services, and all API endpoints.
+
+```bash
+# Run the full suite from the project root
+pytest tests/ -v
+
+# Run a specific test file
+pytest tests/test_utils/test_ip_utils.py -v
+
+# Run with coverage report
+pip install pytest-cov
+pytest tests/ --cov=app --cov-report=term-missing
+```
+
+**Test layout:**
+
+| Directory | Contents |
+|-----------|----------|
+| `tests/test_utils/` | IP validation, CIDR matching, regex compilation & matching |
+| `tests/test_services/` | Signature matcher (protocol/port/payload), alert manager (CRUD, aggregation, stats) |
+| `tests/test_api/` | System control, alert CRUD, signature CRUD — all via TestClient |
+
+Tests use an in-memory SQLite database with per-test transaction rollback for full isolation. The detection engine and permission checks are mocked so root access is never required.
 
 ## Testing with Kali Linux
 
